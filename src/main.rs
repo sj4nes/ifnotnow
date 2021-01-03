@@ -4,7 +4,7 @@ use std::fs::File;
 use std::io::prelude::*;
 
 use chrono::prelude::*;
-use clap::{App, Arg, SubCommand};
+use clap::{App, Arg, ArgMatches, SubCommand};
 use serde::{Deserialize, Serialize};
 use serde_yaml;
 
@@ -142,19 +142,25 @@ fn main() -> std::io::Result<()> {
             ),
         )
         .get_matches();
-    if let Some(matches) = matches.subcommand_matches("init") {
-        let name = matches.value_of("NAME").unwrap();
-        let mut timeline = List::new(&name);
-        let timeline_yaml = serde_yaml::to_string(&timeline).unwrap();
-        let filename = format!("{}{}", &name, IFNOTNOW_EXTENSION);
-        if std::path::Path::new(&filename).exists() {
-            eprintln!("ERROR: {} exists, not overwriting", filename);
-        } else {
-            let mut buf = File::create(&filename)?;
-            buf.write_all(&timeline_yaml.as_bytes())?;
-        }
-    }
+    match matches.subcommand() {
+        ("init", Some(args)) => run_init(&args),
+        _ => Ok(()),
+    }?;
 
+    Ok(())
+}
+
+fn run_init(matches: &ArgMatches) -> std::io::Result<()> {
+    let name = matches.value_of("NAME").unwrap();
+    let timeline = List::new(&name);
+    let timeline_yaml = serde_yaml::to_string(&timeline).unwrap();
+    let filename = format!("{}{}", &name, IFNOTNOW_EXTENSION);
+    if std::path::Path::new(&filename).exists() {
+        eprintln!("ERROR: {} exists, not overwriting", filename);
+    } else {
+        let mut buf = File::create(&filename)?;
+        buf.write_all(&timeline_yaml.as_bytes())?;
+    }
     Ok(())
 }
 
