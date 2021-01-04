@@ -182,10 +182,27 @@ fn main() -> std::io::Result<()> {
                     .index(1),
             ),
         )
+        .subcommand(
+            SubCommand::with_name("add").arg(
+                Arg::with_name("NAME")
+                    .help("Sets the name of the timeline to modify")
+                    .required(true)
+                    .index(1),
+            ),
+        )
+        .subcommand(
+            SubCommand::with_name("now").arg(
+                Arg::with_name("NAME")
+                    .help("Sets the name of the timeline to display for now")
+                    .required(true)
+                    .index(1),
+            ),
+        )
         .get_matches();
     match matches.subcommand() {
         ("init", Some(args)) => run_init(&args),
         ("add", Some(args)) => run_add(&args),
+        ("now", Some(args)) => run_now(&args),
         _ => Ok(()),
     }?;
 
@@ -200,6 +217,7 @@ fn run_init(matches: &ArgMatches) -> std::io::Result<()> {
     };
     let timeline_yaml = serde_yaml::to_string(&timeline).unwrap();
     let filename = format!("{}{}", &name, IFNOTNOW_EXTENSION);
+
     if std::path::Path::new(&filename).exists() {
         eprintln!("ERROR: {} exists, not overwriting", filename);
     } else {
@@ -222,7 +240,50 @@ fn run_add(matches: &ArgMatches) -> std::io::Result<()> {
         Err(e) => panic!("{:?}", e),
     }
 }
+fn render_list(list: List, indent: &str) -> String {
+    let mut out = String::from("");
+    for x in list.items.iter() {
+        out = match x {
+            ListItem::Heading(txt) => format!("{}{}## {}\n", out, indent, txt),
+            ListItem::Note(txt) => format!("{}{}> {}\n", out, indent, txt),
+            ListItem::Checkbox(cb) => {
+                format!(
+                    "{}{} - [{}] {}\n",
+                    out,
+                    indent,
+                    if cb.done { "x" } else { " " },
+                    cb.label
+                )
+            }
+            ListItem::Timebox(tb) => {
+                format!(
+                    "{}{} - [{}] {} (..{} <={})\n",
+                    out, indent, "?", tb.label, tb.accrued, tb.budget
+                )
+            }
+            ListItem::Entry(ent) => {
+                format!("{}{} - {}\n", out, indent, ent)
+            }
+            ListItem::Sublist(ent) => {
+                format!("{}{}", out, format!("{}   ", indent))
+            }
+        }
+    }
+    out
+}
 
+fn run_now(matches: &ArgMatches) -> std::io::Result<()> {
+    let name = matches.value_of("NAME").unwrap();
+    let timeline = List::load(&name);
+    match timeline {
+        Ok(timeline) => {
+            println!("# {}", timeline.name);
+            println!("{}", render_list(timeline, ""));
+            Ok(())
+        }
+        Err(e) => panic!("{:?}", e),
+    }
+}
 fn starter_timeline() -> List {
     let mut timeline = List::new(&"Your Starter Timeline");
     timeline.items.push(ListItem::Heading(String::from(
