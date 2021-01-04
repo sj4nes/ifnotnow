@@ -8,6 +8,8 @@ use clap::{App, Arg, ArgMatches, SubCommand};
 use serde::{Deserialize, Serialize};
 use serde_yaml;
 
+pub type DTUtc = DateTime<Utc>;
+
 const IFNOTNOW_EXTENSION: &str = ".inn.yaml";
 
 pub enum Cmd {
@@ -56,28 +58,66 @@ impl List {
             items: vec![],
         }
     }
+    fn filename(name: &str) -> String {
+        format!("{}{}", &name, IFNOTNOW_EXTENSION)
+    }
+    fn load(name: &str) -> Result<List, INNError> {
+        match std::fs::File::open(List::filename(&name)) {
+            Ok(file) => {
+                let reader = std::io::BufReader::new(file);
+                match serde_yaml::from_reader(reader) {
+                    Ok(l) => Ok(l),
+                    Err(e) => Err(INNError::Yaml(e)),
+                }
+            }
+            Err(e) => Err(INNError::File(e)),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum INNError {
+    Yaml(serde_yaml::Error),
+    File(std::io::Error),
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum AttentionEvent {
+    Created(DTUtc),
+    Started(DTUtc),
+    Paused(DTUtc),
+    WaitingFor(DTUtc, String),
+    Abandoned(DTUtc),
+    Finished(DTUtc),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Checkbox {
-    kind: String,
     pub label: String,
-    pub done: Option<DateTime<Utc>>,
-    pub active: Option<DateTime<Utc>>,
-    pub started: Option<DateTime<Utc>>,
-    pub accrued: Timespan,
-    created: DateTime<Utc>,
+    pub done: bool,
 }
 impl Checkbox {
-    fn new(label: String, done: Option<DateTime<Utc>>) -> Checkbox {
-        Checkbox {
-            kind: "checkbox/v1".to_string(),
+    fn new(label: String, done: bool) -> Checkbox {
+        Checkbox { label, done }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CheckTimebox {
+    pub label: String,
+    pub done: Option<DTUtc>,
+    pub history: Vec<AttentionEvent>,
+    pub accrued: Timespan,
+    pub budget: Timespan,
+}
+impl CheckTimebox {
+    fn new(label: String, done: Option<DTUtc>) -> CheckTimebox {
+        CheckTimebox {
             label,
             done,
-            active: None,
-            started: None,
             accrued: Timespan::new(0),
-            created: Utc::now(),
+            budget: Timespan::new(3600),
+            history: vec![AttentionEvent::Created(Utc::now())],
         }
     }
 }
@@ -87,6 +127,7 @@ pub enum ListItem {
     Heading(String),
     Entry(String),
     Checkbox(Checkbox),
+    Timebox(CheckTimebox),
     Sublist(List),
     Note(String),
 }
@@ -112,9 +153,9 @@ impl ListMap {
 #[derive(Serialize)]
 pub struct Event {
     list: List,
-    created_ts: DateTime<Utc>,
-    begins: Option<DateTime<Utc>>,
-    ends: Option<DateTime<Utc>>,
+    created_ts: DTUtc,
+    begins: Option<DTUtc>,
+    ends: Option<DTUtc>,
     span: Option<Timespan>,
 }
 impl Event {
@@ -144,6 +185,7 @@ fn main() -> std::io::Result<()> {
         .get_matches();
     match matches.subcommand() {
         ("init", Some(args)) => run_init(&args),
+        ("add", Some(args)) => run_add(&args),
         _ => Ok(()),
     }?;
 
@@ -152,7 +194,10 @@ fn main() -> std::io::Result<()> {
 
 fn run_init(matches: &ArgMatches) -> std::io::Result<()> {
     let name = matches.value_of("NAME").unwrap();
-    let timeline = List::new(&name);
+    let timeline = match name {
+        "starter" => starter_timeline(),
+        _ => List::new(&name),
+    };
     let timeline_yaml = serde_yaml::to_string(&timeline).unwrap();
     let filename = format!("{}{}", &name, IFNOTNOW_EXTENSION);
     if std::path::Path::new(&filename).exists() {
@@ -162,6 +207,20 @@ fn run_init(matches: &ArgMatches) -> std::io::Result<()> {
         buf.write_all(&timeline_yaml.as_bytes())?;
     }
     Ok(())
+}
+
+fn run_add(matches: &ArgMatches) -> std::io::Result<()> {
+    let name = matches.value_of("NAME").unwrap();
+    let timeline = List::load(&name);
+    match timeline {
+        Ok(timeline) => {
+            let timeline_yaml = serde_yaml::to_string(&timeline).unwrap();
+            let mut buf = File::create(List::filename(&name))?;
+            buf.write_all(&timeline_yaml.as_bytes())?;
+            Ok(())
+        }
+        Err(e) => panic!("{:?}", e),
+    }
 }
 
 fn starter_timeline() -> List {
@@ -174,9 +233,9 @@ fn starter_timeline() -> List {
     )));
     timeline.items.push(ListItem::Checkbox(Checkbox::new(
         "A TODO Item".to_string(),
-        None,
+        false,
     )));
-    timeline.items.push(ListItem::Checkbox(Checkbox::new(
+    timeline.items.push(ListItem::Timebox(CheckTimebox::new(
         "A Second TODO Item".to_string(),
         Some(Utc::now()),
     )));
