@@ -92,13 +92,13 @@ pub enum AttentionEvent {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Checkbox {
+pub struct Goal {
     pub label: String,
     pub done: bool,
 }
-impl Checkbox {
-    fn new(label: String, done: bool) -> Checkbox {
-        Checkbox { label, done }
+impl Goal {
+    fn new(label: String, done: bool) -> Goal {
+        Goal { label, done }
     }
 }
 
@@ -126,7 +126,7 @@ impl CheckTimebox {
 pub enum ListItem {
     Heading(String),
     Entry(String),
-    Checkbox(Checkbox),
+    Goal(Goal),
     Timebox(CheckTimebox),
     Sublist(List),
     Note(String),
@@ -246,7 +246,7 @@ fn render_list(list: List, indent: &str) -> String {
         out = match x {
             ListItem::Heading(txt) => format!("{}{}## {}\n", out, indent, txt),
             ListItem::Note(txt) => format!("{}{}> {}\n", out, indent, txt),
-            ListItem::Checkbox(cb) => {
+            ListItem::Goal(cb) => {
                 format!(
                     "{}{} - [{}] {}\n",
                     out,
@@ -292,10 +292,16 @@ fn starter_timeline() -> List {
     timeline.items.push(ListItem::Note(String::from(
         "This is an example timeline that shows the kinds of items you can capture in them.",
     )));
-    timeline.items.push(ListItem::Checkbox(Checkbox::new(
-        "A TODO Item".to_string(),
-        false,
+    timeline
+        .items
+        .push(ListItem::Goal(Goal::new("A TODO Item".to_string(), false)));
+    timeline.items.push(ListItem::Goal(Goal::new(
+        "A done TODO Item".to_string(),
+        true,
     )));
+    timeline
+        .items
+        .push(ListItem::Goal(Goal::new("A TODO Item".to_string(), false)));
     timeline.items.push(ListItem::Timebox(CheckTimebox::new(
         "A Second TODO Item".to_string(),
         Some(Utc::now()),
