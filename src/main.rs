@@ -252,7 +252,11 @@ fn render_list(list: List, indent: &str) -> String {
                     out,
                     indent,
                     if cb.done { "x" } else { " " },
-                    cb.label
+                    if cb.done {
+                        format!("~~{}~~", &cb.label)
+                    } else {
+                        String::from(&cb.label)
+                    }
                 )
             }
             ListItem::Timebox(tb) => {
