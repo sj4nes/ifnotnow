@@ -12,6 +12,7 @@ pub type DTUtc = DateTime<Utc>;
 
 const IFNOTNOW_EXTENSION: &str = ".inn.yaml";
 
+#[derive(Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum Cmd {
     InitializeTimeline(String),
     SwitchTimeline(String),
@@ -19,6 +20,11 @@ pub enum Cmd {
     SaveTimeline(String),
     MarkTimeline(Event),
     SearchTimeline,
+    ViewCalendar(Vec<String>),
+}
+
+pub struct Model {
+    timelines: ListMap,
 }
 
 #[derive(Eq, Debug, PartialEq, PartialOrd, Deserialize, Serialize, Ord)]
@@ -44,7 +50,7 @@ pub enum Horizon {
     Lifetime,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Ord, Eq, PartialOrd, PartialEq)]
 pub struct List {
     kind: String,
     pub name: String,
@@ -81,7 +87,7 @@ pub enum INNError {
     File(std::io::Error),
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, PartialOrd, Ord, Eq)]
 pub enum AttentionEvent {
     Created(DTUtc),
     Started(DTUtc),
@@ -91,7 +97,7 @@ pub enum AttentionEvent {
     Finished(DTUtc),
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, PartialOrd, Ord, Eq)]
 pub struct Goal {
     pub label: String,
     pub done: bool,
@@ -102,7 +108,7 @@ impl Goal {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, PartialOrd, Ord, Eq)]
 pub struct CheckTimebox {
     pub label: String,
     pub done: Option<DTUtc>,
@@ -122,7 +128,7 @@ impl CheckTimebox {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Deserialize, Serialize, Ord, Eq, PartialOrd, PartialEq)]
 pub enum ListItem {
     Heading(String),
     Entry(String),
@@ -150,7 +156,7 @@ impl ListMap {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize, Eq, Ord, PartialEq, PartialOrd)]
 pub struct Event {
     list: List,
     created_ts: DTUtc,
