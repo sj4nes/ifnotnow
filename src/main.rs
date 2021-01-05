@@ -183,12 +183,20 @@ fn main() -> std::io::Result<()> {
             ),
         )
         .subcommand(
-            SubCommand::with_name("add").arg(
-                Arg::with_name("NAME")
-                    .help("Sets the name of the timeline to modify")
-                    .required(true)
-                    .index(1),
-            ),
+            SubCommand::with_name("add")
+                .arg(
+                    Arg::with_name("NAME")
+                        .help("Sets the name of the timeline to modify")
+                        .required(true)
+                        .index(1),
+                )
+                .arg(
+                    Arg::with_name("goal")
+                        .short("g")
+                        .long("goal")
+                        .help("Short description of the goal")
+                        .takes_value(true),
+                ),
         )
         .subcommand(
             SubCommand::with_name("now").arg(
@@ -231,7 +239,12 @@ fn run_add(matches: &ArgMatches) -> std::io::Result<()> {
     let name = matches.value_of("NAME").unwrap();
     let timeline = List::load(&name);
     match timeline {
-        Ok(timeline) => {
+        Ok(mut timeline) => {
+            if let Some(goal) = matches.value_of("goal") {
+                timeline
+                    .items
+                    .push(ListItem::Goal(Goal::new(goal.to_string(), false)));
+            }
             let timeline_yaml = serde_yaml::to_string(&timeline).unwrap();
             let mut buf = File::create(List::filename(&name))?;
             buf.write_all(&timeline_yaml.as_bytes())?;
@@ -240,7 +253,8 @@ fn run_add(matches: &ArgMatches) -> std::io::Result<()> {
         Err(e) => panic!("{:?}", e),
     }
 }
-fn render_list(list: List, indent: &str) -> String {
+
+fn render_list(list: &List, indent: &str) -> String {
     let mut out = String::from("");
     for x in list.items.iter() {
         out = match x {
@@ -268,8 +282,8 @@ fn render_list(list: List, indent: &str) -> String {
             ListItem::Entry(ent) => {
                 format!("{}{} - {}\n", out, indent, ent)
             }
-            ListItem::Sublist(ent) => {
-                format!("{}{}", out, format!("{}   ", indent))
+            ListItem::Sublist(sub) => {
+                format!("{}{}", out, render_list(sub, &"   "))
             }
         }
     }
@@ -282,12 +296,13 @@ fn run_now(matches: &ArgMatches) -> std::io::Result<()> {
     match timeline {
         Ok(timeline) => {
             println!("# {}", timeline.name);
-            println!("{}", render_list(timeline, ""));
+            println!("{}", render_list(&timeline, ""));
             Ok(())
         }
         Err(e) => panic!("{:?}", e),
     }
 }
+
 fn starter_timeline() -> List {
     let mut timeline = List::new(&"Your Starter Timeline");
     timeline.items.push(ListItem::Heading(String::from(
