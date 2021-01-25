@@ -23,13 +23,19 @@ pub type DTUtc = DateTime<Utc>;
 
 const IFNOTNOW_EXTENSION: &str = ".inn.yaml";
 
-#[derive(Debug)]
+/// Patterns for searching contexts
+#[derive(Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum Pattern {
     Keyword(String),
-    Regex(regex::Regex),
+    Regex(String),
 }
 
-#[derive(Debug)]
+/// Some patterns may have syntax errors.
+pub enum PatternErr {
+    InvalidRegex,
+}
+
+#[derive(Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum Query {
     ContextNames(Pattern),
     ContextItems(Pattern),
@@ -42,8 +48,6 @@ pub enum ViewCmd {
     Next,
     Clear,
 }
-
-type Query = String;
 
 #[derive(Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum ContextCmd {
@@ -62,6 +66,7 @@ pub enum ContextCmd {
 /// Commands trigger fun things
 pub enum Cmd {
     Noop,
+    Help,
     Context(ContextCmd),
     View(ViewCmd),
 }
@@ -94,15 +99,13 @@ pub enum Horizon {
 }
 
 #[derive(Debug, Deserialize, Serialize, Ord, Eq, PartialOrd, PartialEq)]
-pub struct List {
-    kind: String,
+pub struct ListV1 {
     pub name: String,
     pub items: Vec<ListItem>,
 }
-impl List {
-    fn new(name: &str) -> List {
-        List {
-            kind: "list/v1".to_string(),
+impl ListV1 {
+    fn new(name: &str) -> ListV1 {
+        ListV1 {
             name: name.to_string(),
             items: vec![],
         }
@@ -110,8 +113,8 @@ impl List {
     fn filename(name: &str) -> String {
         format!("{}{}", &name, IFNOTNOW_EXTENSION)
     }
-    fn load(name: &str) -> Result<List, INNError> {
-        match std::fs::File::open(List::filename(&name)) {
+    fn load(name: &str) -> Result<ListV1, INNError> {
+        match std::fs::File::open(ListV1::filename(&name)) {
             Ok(file) => {
                 let reader = std::io::BufReader::new(file);
                 match serde_yaml::from_reader(reader) {
@@ -177,13 +180,13 @@ pub enum ListItem {
     Entry(String),
     Goal(Goal),
     Timebox(CheckTimebox),
-    Sublist(List),
+    Sublist(ListV1),
     Note(String),
 }
 
 #[derive(Debug)]
 pub struct ListMap {
-    lmap: BTreeMap<String, List>,
+    lmap: BTreeMap<String, ListV1>,
 }
 impl ListMap {
     fn new() -> ListMap {
@@ -192,7 +195,8 @@ impl ListMap {
         }
     }
     fn add(&mut self, listname: &str) {
-        self.lmap.insert(listname.to_string(), List::new(listname));
+        self.lmap
+            .insert(listname.to_string(), ListV1::new(listname));
     }
     fn drop(&mut self, listname: &str) {
         self.lmap.remove(&listname.to_string());
@@ -201,14 +205,14 @@ impl ListMap {
 
 #[derive(Debug, Serialize, Eq, Ord, PartialEq, PartialOrd)]
 pub struct Event {
-    list: List,
+    list: ListV1,
     created_ts: DTUtc,
     begins: Option<DTUtc>,
     ends: Option<DTUtc>,
     span: Option<Timespan>,
 }
 impl Event {
-    fn new(list: List, span: Timespan) -> Event {
+    fn new(list: ListV1, span: Timespan) -> Event {
         Event {
             list,
             span: Some(span),
@@ -260,18 +264,23 @@ fn main() -> std::io::Result<()> {
     match matches.subcommand() {
         ("init", Some(args)) => {
             let name = args.value_of("NAME").unwrap();
-            Cmd::InitializeTimeline(name.to_string())
+            Cmd::Context(ContextCmd::Init(name.to_string()))
         }
-        ("add", Some(args)) => Cmd::MarkTimeline(),
+        ("add", Some(args)) => {
+            let name = args.value_of("NAME").unwrap();
+            let event = Event::new(ListV1::new(&name), Timespan::new(3600));
+            Cmd::Context(ContextCmd::Mark(name.to_string(), event))
+        }
         ("help", Some(args)) => Cmd::Help,
         ("now", Some(args)) => Cmd::Noop,
         _ => Cmd::Noop,
     };
     for cmd in cmd_queue.iter() {
         match cmd {
-            Cmd::InitializeTimeline(name) => {
+            Cmd::Context(ContextCmd::Init(name)) => {
                 init_timeline(name)?;
             }
+            _ => println!("{:?} not implelmented", cmd),
         }
     }
 
@@ -281,7 +290,7 @@ fn main() -> std::io::Result<()> {
 fn init_timeline(name: &str) -> std::io::Result<()> {
     let timeline = match name {
         "starter" => starter_timeline(),
-        _ => List::new(&name),
+        _ => ListV1::new(&name),
     };
     let timeline_yaml = serde_yaml::to_string(&timeline).unwrap();
     let filename = format!("{}{}", &name, IFNOTNOW_EXTENSION);
@@ -297,7 +306,7 @@ fn init_timeline(name: &str) -> std::io::Result<()> {
 
 fn run_add(matches: &ArgMatches) -> std::io::Result<()> {
     let name = matches.value_of("NAME").unwrap();
-    let timeline = List::load(&name);
+    let timeline = ListV1::load(&name);
     match timeline {
         Ok(mut timeline) => {
             if let Some(goal) = matches.value_of("goal") {
@@ -306,7 +315,7 @@ fn run_add(matches: &ArgMatches) -> std::io::Result<()> {
                     .push(ListItem::Goal(Goal::new(goal.to_string(), false)));
             }
             let timeline_yaml = serde_yaml::to_string(&timeline).unwrap();
-            let mut buf = File::create(List::filename(&name))?;
+            let mut buf = File::create(ListV1::filename(&name))?;
             buf.write_all(&timeline_yaml.as_bytes())?;
             Ok(())
         }
@@ -314,7 +323,7 @@ fn run_add(matches: &ArgMatches) -> std::io::Result<()> {
     }
 }
 
-fn render_list(list: &List, indent: &str) -> String {
+fn render_list(list: &ListV1, indent: &str) -> String {
     let mut out = String::from("");
     for x in list.items.iter() {
         out = match x {
@@ -352,7 +361,7 @@ fn render_list(list: &List, indent: &str) -> String {
 
 fn run_now(matches: &ArgMatches) -> std::io::Result<()> {
     let name = matches.value_of("NAME").unwrap();
-    let timeline = List::load(&name);
+    let timeline = ListV1::load(&name);
     match timeline {
         Ok(timeline) => {
             println!("# {}", timeline.name);
@@ -363,8 +372,8 @@ fn run_now(matches: &ArgMatches) -> std::io::Result<()> {
     }
 }
 
-fn starter_timeline() -> List {
-    let mut timeline = List::new(&"Your Starter Timeline");
+fn starter_timeline() -> ListV1 {
+    let mut timeline = ListV1::new(&"Your Starter Timeline");
     timeline.items.push(ListItem::Heading(String::from(
         "Welcome to Your Starter Timeline",
     )));
@@ -387,6 +396,6 @@ fn starter_timeline() -> List {
     )));
     timeline
         .items
-        .push(ListItem::Sublist(List::new("nested list")));
+        .push(ListItem::Sublist(ListV1::new("nested list")));
     timeline
 }
