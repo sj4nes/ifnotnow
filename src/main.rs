@@ -1,5 +1,6 @@
 //! ifnotnow (inn) is a Timestripe inspired CLI/TUI application
 //!
+//! - local first software guidelines
 //! - use YAML documents as the "data store" for human-readable/GIT trackable changes
 //! - these documents are called "Contexts". They can be added and removed from the view.
 //! - Views have one or more axes that structure the items inside.
@@ -24,15 +25,35 @@ pub type DTUtc = DateTime<Utc>;
 const IFNOTNOW_EXTENSION: &str = ".inn.yaml";
 
 /// Patterns for searching contexts
-#[derive(Debug, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Eq, PartialEq, PartialOrd, Ord, Debug)]
 pub enum Pattern {
     Keyword(String),
     Regex(String),
+}
+impl Pattern {
+    fn check_errors(&self) -> Option<PatternErr> {
+        use Pattern::*;
+        match self {
+            Keyword(_) => None,
+            Regex(rx) => match regex::Regex::new(rx) {
+                Ok(_) => None,
+                _ => Some(PatternErr::InvalidRegex),
+            },
+        }
+    }
 }
 
 /// Some patterns may have syntax errors.
 pub enum PatternErr {
     InvalidRegex,
+}
+
+/// Trait for how anything could be matched against a pattern.
+pub trait Matchable {
+    /// Returns the number of matches of pattern in traited data.
+    fn matches(&self, pattern: Pattern) -> Result<usize, PatternErr> {
+        Ok(0)
+    }
 }
 
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd)]
