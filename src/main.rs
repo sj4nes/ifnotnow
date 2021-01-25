@@ -1,3 +1,13 @@
+//! ifnotnow (inn) is a Timestripe inspired CLI/TUI application
+//!
+//! - use YAML documents as the "data store" for human-readable/GIT trackable changes
+//! - these documents are called "Contexts". They can be added and removed from the view.
+//! - Views have one or more axes that structure the items inside.
+//! - A time-based view is common
+//! - Alphabetic views for topics, tags, titles, people, places, etc.
+//! - Geoviews locate places on a projection onto space. These spaces could be the globe or a 2D space
+//!   such as the interior of a building.
+//!
 use std::collections::BTreeMap;
 use std::fmt;
 use std::fs::File;
@@ -5,6 +15,7 @@ use std::io::prelude::*;
 
 use chrono::prelude::*;
 use clap::{App, Arg, ArgMatches, SubCommand};
+use regex;
 use serde::{Deserialize, Serialize};
 use serde_yaml;
 
@@ -12,15 +23,47 @@ pub type DTUtc = DateTime<Utc>;
 
 const IFNOTNOW_EXTENSION: &str = ".inn.yaml";
 
+#[derive(Debug)]
+pub enum Pattern {
+    Keyword(String),
+    Regex(regex::Regex),
+}
+
+#[derive(Debug)]
+pub enum Query {
+    ContextNames(Pattern),
+    ContextItems(Pattern),
+}
+
 #[derive(Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum ViewCmd {
+    Switch(String),
+    Last,
+    Next,
+    Clear
+}
+
+type Query = String;
+
+#[derive(Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum ContextCmd {
+    Init(String),
+    Search(String, Query),
+    Switch(String),
+    Last,
+    Next,
+    Clear,
+    Load(String),
+    Save(String),
+    Mark(String, Event),
+}
+
+#[derive(Debug, Eq, Ord, PartialEq, PartialOrd)]
+/// Commands trigger fun things
 pub enum Cmd {
-    InitializeTimeline(String),
-    SwitchTimeline(String),
-    LoadTimeline(String),
-    SaveTimeline(String),
-    MarkTimeline(Event),
-    SearchTimeline,
-    ViewCalendar(Vec<String>),
+    Noop,
+    Context(ContextCmd),
+    View(ViewCmd),
 }
 
 pub struct Model {
@@ -213,18 +256,29 @@ fn main() -> std::io::Result<()> {
             ),
         )
         .get_matches();
+    let cmd_queue: Vec<Cmd> = vec![];
     match matches.subcommand() {
-        ("init", Some(args)) => run_init(&args),
-        ("add", Some(args)) => run_add(&args),
-        ("now", Some(args)) => run_now(&args),
-        _ => Ok(()),
-    }?;
+        ("init", Some(args)) => {
+            let name = args.value_of("NAME").unwrap();
+            Cmd::InitializeTimeline(name.to_string())
+        }
+        ("add", Some(args)) => Cmd::MarkTimeline(),
+        ("help", Some(args)) => Cmd::Help,
+        ("now", Some(args)) => Cmd::Noop,
+        _ => Cmd::Noop,
+    };
+    for cmd in cmd_queue.iter() {
+        match cmd {
+            Cmd::InitializeTimeline(name) => {
+                init_timeline(name)?;
+            }
+        }
+    }
 
     Ok(())
 }
 
-fn run_init(matches: &ArgMatches) -> std::io::Result<()> {
-    let name = matches.value_of("NAME").unwrap();
+fn init_timeline(name: &str) -> std::io::Result<()> {
     let timeline = match name {
         "starter" => starter_timeline(),
         _ => List::new(&name),
