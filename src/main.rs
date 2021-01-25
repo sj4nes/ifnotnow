@@ -40,7 +40,7 @@ pub enum ViewCmd {
     Switch(String),
     Last,
     Next,
-    Clear
+    Clear,
 }
 
 type Query = String;
