@@ -92,8 +92,10 @@ pub enum Cmd {
     View(ViewCmd),
 }
 
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Model {
-    timelines: ListMap,
+    now_context: Option<String>,
+    contexts: ListMap,
 }
 
 #[derive(Eq, Debug, PartialEq, PartialOrd, Deserialize, Serialize, Ord)]
@@ -205,7 +207,7 @@ pub enum ListItem {
     Note(String),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ListMap {
     lmap: BTreeMap<String, ListV1>,
 }
