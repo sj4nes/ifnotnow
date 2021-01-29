@@ -10,7 +10,10 @@ pub trait LarchMinimal {
     /// How the model is translated into a view
     type View;
 
-    fn init(flags: Self::Flags) -> Self::Model;
+    fn run(flags: Self::Flags) {
+        let (mut model, mut msg) = Self::init(flags);
+    }
+    fn init(flags: Self::Flags) -> (Self::Model, Option<Self::Msg>);
     fn update(
         msg: Self::Msg,
         model: Self::Model,

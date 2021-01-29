@@ -18,17 +18,13 @@ pub enum Cmd {
 struct ContextMod;
 struct ContextFlags;
 struct ContextModel;
-pub fn run(cxc: &Cmd) -> Result<(), std::io::Error> {
-    Ok(())
-}
 impl LarchMinimal for ContextMod {
     type Flags = contexts::ContextFlags;
     type Model = contexts::ContextModel;
     type Msg = contexts::Cmd;
     type View = tui::View;
-
-    fn init(flags: Self::Flags) -> Self::Model {
-        ContextModel {}
+    fn init(flags: Self::Flags) -> (Self::Model, Option<Self::Msg>) {
+        (ContextModel {}, None)
     }
     fn update(
         cxc: Self::Msg,

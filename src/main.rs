@@ -296,7 +296,7 @@ fn main() -> std::io::Result<()> {
                 init_timeline(name)?;
             }
             Cmd::Context(cxc) => {
-                contexts::run(cxc)?;
+                // TODO realize feature behavior fragment and then send msg
             }
             _ => println!("{:?} not implelmented", cmd),
         }
