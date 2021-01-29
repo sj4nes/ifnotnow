@@ -14,6 +14,7 @@ use std::fmt;
 use std::fs::File;
 use std::io::prelude::*;
 
+use anyhow;
 use chrono::prelude::*;
 use clap::{App, Arg, ArgMatches, SubCommand};
 use regex;
@@ -25,7 +26,7 @@ pub type DTUtc = DateTime<Utc>;
 const IFNOTNOW_EXTENSION: &str = ".inn.yaml";
 
 /// Patterns for searching contexts
-#[derive(Eq, PartialEq, PartialOrd, Ord, Debug)]
+#[derive(Eq, Clone, PartialEq, PartialOrd, Ord, Debug)]
 pub enum Pattern {
     Keyword(String),
     Regex(String),
@@ -56,7 +57,7 @@ pub trait Matchable {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum Query {
     ContextNames(Pattern),
     ContextItems(Pattern),
@@ -71,24 +72,11 @@ pub enum ViewCmd {
 }
 
 #[derive(Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub enum ContextCmd {
-    Init(String),
-    Search(String, Query),
-    Switch(String),
-    Last,
-    Next,
-    Clear,
-    Load(String),
-    Save(String),
-    Mark(String, Event),
-}
-
-#[derive(Debug, Eq, Ord, PartialEq, PartialOrd)]
 /// Commands trigger fun things
 pub enum Cmd {
     Noop,
     Help,
-    Context(ContextCmd),
+    Context(contexts::Cmd),
     View(ViewCmd),
 }
 
@@ -98,7 +86,7 @@ pub struct Model {
     contexts: ListMap,
 }
 
-#[derive(Eq, Debug, PartialEq, PartialOrd, Deserialize, Serialize, Ord)]
+#[derive(Eq, Clone, Debug, PartialEq, PartialOrd, Deserialize, Serialize, Ord)]
 pub struct Timespan {
     duration_s: u64,
 }
@@ -121,7 +109,7 @@ pub enum Horizon {
     Lifetime,
 }
 
-#[derive(Debug, Deserialize, Serialize, Ord, Eq, PartialOrd, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, Ord, Eq, PartialOrd, PartialEq)]
 pub struct ListV1 {
     pub name: String,
     pub items: Vec<ListItem>,
@@ -156,7 +144,7 @@ pub enum INNError {
     File(std::io::Error),
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, PartialOrd, Ord, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, PartialOrd, Ord, Eq)]
 pub enum AttentionEvent {
     Created(DTUtc),
     Started(DTUtc),
@@ -166,7 +154,7 @@ pub enum AttentionEvent {
     Finished(DTUtc),
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, PartialOrd, Ord, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, PartialOrd, Ord, Eq)]
 pub struct Goal {
     pub label: String,
     pub done: bool,
@@ -177,7 +165,7 @@ impl Goal {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, PartialOrd, Ord, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, PartialOrd, Ord, Eq)]
 pub struct CheckTimebox {
     pub label: String,
     pub done: Option<DTUtc>,
@@ -197,7 +185,7 @@ impl CheckTimebox {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, Ord, Eq, PartialOrd, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, Ord, Eq, PartialOrd, PartialEq)]
 pub enum ListItem {
     Heading(String),
     Entry(String),
@@ -226,7 +214,7 @@ impl ListMap {
     }
 }
 
-#[derive(Debug, Serialize, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, Serialize, Eq, Ord, PartialEq, PartialOrd)]
 pub struct Event {
     list: ListV1,
     created_ts: DTUtc,
@@ -287,12 +275,12 @@ fn main() -> std::io::Result<()> {
     match matches.subcommand() {
         ("init", Some(args)) => {
             let name = args.value_of("NAME").unwrap();
-            Cmd::Context(ContextCmd::Init(name.to_string()))
+            Cmd::Context(contexts::Cmd::Init(name.to_string()))
         }
         ("add", Some(args)) => {
             let name = args.value_of("NAME").unwrap();
             let event = Event::new(ListV1::new(&name), Timespan::new(3600));
-            Cmd::Context(ContextCmd::Mark(name.to_string(), event))
+            Cmd::Context(contexts::Cmd::Mark(name.to_string(), event))
         }
         ("help", Some(args)) => Cmd::Help,
         ("now", Some(args)) => Cmd::Noop,
@@ -300,14 +288,81 @@ fn main() -> std::io::Result<()> {
     };
     for cmd in cmd_queue.iter() {
         match cmd {
-            Cmd::Context(ContextCmd::Init(name)) => {
+            Cmd::Context(contexts::Cmd::Init(name)) => {
                 init_timeline(name)?;
+            }
+            Cmd::Context(cxc) => {
+                contexts::run(cxc)?;
             }
             _ => println!("{:?} not implelmented", cmd),
         }
     }
 
     Ok(())
+}
+
+/// Every subcommand may be a minimal Larch application. Larch being
+/// my flavor of the Elm Architecture for CLI/TUI
+pub trait LarchMinimal {
+    /// The initial configuration for the application, perhaps to load the persisted state.
+    type Flags;
+    /// The state of the application
+    type Model;
+    /// Something that causes an update to the model
+    type Msg;
+    /// How the model is translated into a view
+    type View;
+
+    fn init(flags: Self::Flags) -> Self::Model;
+    fn update(msg: Self::Msg, model: Model) -> Result<(Model, Option<Self::Msg>), anyhow::Error>;
+    fn view(model: Self::Model) -> (Self::View, Option<Self::Msg>);
+}
+
+mod tui {
+    pub struct View;
+}
+
+mod contexts {
+    use super::*;
+    #[derive(Debug, Eq, Ord, PartialEq, PartialOrd, Clone)]
+    pub enum Cmd {
+        Init(String),
+        List,
+        Search(String, Query),
+        Switch(String),
+        Last,
+        Next,
+        Clear,
+        Load(String),
+        Save(String),
+        Mark(String, Event),
+    }
+
+    struct ContextMod;
+    struct ContextFlags;
+    struct ContextModel;
+    pub fn run(cxc: &Cmd) -> Result<(), std::io::Error> {
+        Ok(())
+    }
+    impl LarchMinimal for ContextMod {
+        type Flags = contexts::ContextFlags;
+        type Model = contexts::ContextModel;
+        type Msg = contexts::Cmd;
+        type View = tui::View;
+
+        fn init(flags: Self::Flags) -> Self::Model {
+            ContextModel {}
+        }
+        fn update(
+            cxc: Self::Msg,
+            model: Model,
+        ) -> Result<(Model, Option<Self::Msg>), anyhow::Error> {
+            Ok((model, None))
+        }
+        fn view(model: Self::Model) -> (Self::View, Option<Self::Msg>) {
+            (Self::View {}, None)
+        }
+    }
 }
 
 fn init_timeline(name: &str) -> std::io::Result<()> {
