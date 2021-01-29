@@ -21,6 +21,10 @@ use regex;
 use serde::{Deserialize, Serialize};
 use serde_yaml;
 
+mod contexts;
+mod larch;
+mod tui;
+
 pub type DTUtc = DateTime<Utc>;
 
 const IFNOTNOW_EXTENSION: &str = ".inn.yaml";
@@ -299,70 +303,6 @@ fn main() -> std::io::Result<()> {
     }
 
     Ok(())
-}
-
-/// Every subcommand may be a minimal Larch application. Larch being
-/// my flavor of the Elm Architecture for CLI/TUI
-pub trait LarchMinimal {
-    /// The initial configuration for the application, perhaps to load the persisted state.
-    type Flags;
-    /// The state of the application
-    type Model;
-    /// Something that causes an update to the model
-    type Msg;
-    /// How the model is translated into a view
-    type View;
-
-    fn init(flags: Self::Flags) -> Self::Model;
-    fn update(msg: Self::Msg, model: Model) -> Result<(Model, Option<Self::Msg>), anyhow::Error>;
-    fn view(model: Self::Model) -> (Self::View, Option<Self::Msg>);
-}
-
-mod tui {
-    pub struct View;
-}
-
-mod contexts {
-    use super::*;
-    #[derive(Debug, Eq, Ord, PartialEq, PartialOrd, Clone)]
-    pub enum Cmd {
-        Init(String),
-        List,
-        Search(String, Query),
-        Switch(String),
-        Last,
-        Next,
-        Clear,
-        Load(String),
-        Save(String),
-        Mark(String, Event),
-    }
-
-    struct ContextMod;
-    struct ContextFlags;
-    struct ContextModel;
-    pub fn run(cxc: &Cmd) -> Result<(), std::io::Error> {
-        Ok(())
-    }
-    impl LarchMinimal for ContextMod {
-        type Flags = contexts::ContextFlags;
-        type Model = contexts::ContextModel;
-        type Msg = contexts::Cmd;
-        type View = tui::View;
-
-        fn init(flags: Self::Flags) -> Self::Model {
-            ContextModel {}
-        }
-        fn update(
-            cxc: Self::Msg,
-            model: Model,
-        ) -> Result<(Model, Option<Self::Msg>), anyhow::Error> {
-            Ok((model, None))
-        }
-        fn view(model: Self::Model) -> (Self::View, Option<Self::Msg>) {
-            (Self::View {}, None)
-        }
-    }
 }
 
 fn init_timeline(name: &str) -> std::io::Result<()> {
